@@ -9,6 +9,17 @@ class RunStatus(StrEnum):
  COMPLETED="completed"
  INFEASIBLE="infeasible"
  FAILED="failed"
+class ReviewState(StrEnum):
+ SUBMITTED="submitted"
+ APPROVED="approved"
+ WITHDRAWN="withdrawn"
+ REJECTED="rejected"
+class ReviewAction(StrEnum):
+ SUBMIT="submit"
+ APPROVE="approve"
+ WITHDRAW="withdraw"
+ REJECT="reject"
+ RESUBMIT="resubmit"
 PROPERTIES=["strength","whiteness","recycled"]
 PHYSICAL_BOUNDS={"strength":(0.,100.),"whiteness":(0.,100.),"recycled":(0.,1.)}
 

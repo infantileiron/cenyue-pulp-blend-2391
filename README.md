@@ -48,6 +48,24 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 无登录401；错角色403；不可行/失败运行不能提审409；未批准不能归档409。同一已审复核重复创建报告返回同一快照，不覆盖原结果。审计保留账号、路径与响应码，不写密码、Token和上传正文。
 
+## 配方复核工作流
+
+复核状态为 `submitted`（待复核）、`approved`（已批准）、`withdrawn`（已撤回）、`rejected`（已驳回）。提交人可在待复核时撤回，管理员可批准或驳回（驳回必须填写意见）；撤回或驳回后提交人可修改说明重新提交，原复核行保留、版本号递增并重新进入待复核。每次提交、批准、撤回、驳回、重提都追加写入 `review_events`，完整保留动作、前后状态、操作者、意见与版本，只增不改不删。
+
+批准、撤回、驳回并发到达时，由单条条件 UPDATE 完成状态机迁移（WHERE 限定 `submitted` 与页面版本号，数据库行锁串行化），只接受第一个结果，其余请求返回409并提示刷新。处理请求必须携带页面持有的 `expected_version`；重提导致版本递增后，过期页面上的批准/撤回/驳回一律409明确失败，不会静默覆盖。
+
+归档只接受当次 `approved` 复核：快照固化当时的运行结果、复核意见、批准人、版本与运行ID。同一复核重复归档返回同一份报告（首次201、重复或并发撞唯一约束200），已归档内容不随后续运行结果或新一轮复核变化；新一轮复核独立归档、互不覆盖。只有 `result/action/reviewer` 三个键的历史快照仍可正常读取与导出。
+
+| 动作 | 路径 | 权限 |
+|---|---|---|
+| 提审 / 修改重提 | `POST /reviews`、`POST /reviews/{id}/resubmit` | analyst、admin |
+| 撤回 | `POST /reviews/{id}/withdraw`（带 `expected_version`） | analyst、admin |
+| 批准 / 驳回 | `POST /reviews/{id}/approve`、`/reject`（驳回意见必填） | admin |
+| 处理记录 | `GET /reviews/{id}/events`，列表与详情内嵌 `events` | 全部登录账号 |
+| 归档 | `POST /reports`（仅已批准）、重复归档返回同一份 | admin |
+
+存量库启动时由 `src.config.database.upgrade_schema` 幂等补齐 `reviews.version`、`reviews.created_by` 与 `review_events` 表，目标结构见 `migrations/002_review_workflow.sql`；只增列不删数据，历史复核默认第1版，历史归档快照结构保持兼容。
+
 共享枚举：Role/RunStatus及PROPERTIES在 `backend/src/constants/enums.py`；roles/runStatuses/properties与标签在 `frontend/src/constants/enums.ts`。后端共享CONSTRAINT_TOLERANCE同在constants/enums.py；前端展示服务端返回的数值，不另行计算统计量。
 
 ## 输入与物理口径
@@ -86,13 +104,13 @@ Seed包含8种原浆、价格/供给/三属性及误差宽度，默认强度≥7
 4. 09:14 建立400样本/seed20261112情景，明确成本也扰动。
 5. 09:18 送Redisworker，求一个名义低成本配方并核查活跃约束。
 6. 09:24 查看固定配方LHS通过数与失败样本，对照成本分位与质量余量。
-7. 09:30 分析师提交配方复核，管理员批准假设与结论边界。
-8. 09:36 下载配方CSV和完整扰动样本CSV，保留相同的比例与比较容差。
+7. 09:30 分析师提交配方复核；若结论有误可撤回或由管理员驳回并附意见，修改后重提（版本递增、记录保留），管理员批准假设与结论边界。
+8. 09:36 下载配方CSV和完整扰动样本CSV，保留相同的比例与比较容差；归档页展示每轮复核的完整处理记录。
 
 自然键种子幂等；重复执行不覆盖用户修改说明。
 
 ## 已知差异
 
-MySQL采用8.4 LTS而非8.0；Redis列表无worker崩溃自动重投/取消；新库建表无存量版本化迁移回滚；实体列表最多200条。仅模拟有限CSV原浆和独立均匀误差，没有真实供应商接口、工厂配方下发、非线性混合、相关误差或真实质量认证。Google Fonts断网时回退字体。
+MySQL采用8.4 LTS而非8.0；Redis列表无worker崩溃自动重投/取消；新库建表无存量版本化迁移回滚（002复核工作流变更由启动时幂等检查自动补齐，不提供自动回滚）；实体列表最多200条。仅模拟有限CSV原浆和独立均匀误差，没有真实供应商接口、工厂配方下发、非线性混合、相关误差或真实质量认证。Google Fonts断网时回退字体。
 
 MIT License。真实检查见批次 `test-artifacts/gb-2306/TESTING.md`。

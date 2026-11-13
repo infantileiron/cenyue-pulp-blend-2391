@@ -1,7 +1,7 @@
 import json
 from sqlalchemy import select,func
 from src.config.database import initialize,Session
-from src.models import PulpDataset,QualitySpec,BlendScenario,BlendRun,FormulaReview,Report,User
+from src.models import PulpDataset,QualitySpec,BlendScenario,BlendRun,FormulaReview,ReviewEvent,Report,User
 from src.utils.security import hash_password
 from src.services.run_service import compute
 
@@ -21,9 +21,15 @@ def seed():
   if not db.get(BlendScenario,"demo-scenario"):db.add(BlendScenario(id="demo-scenario",name="名义低成本与固定配方扰动",dataset_id="demo-dataset",spec_id="demo-spec",n_samples=400,seed=20261112,perturb_cost=True))
   db.commit()
   if not db.get(BlendRun,"demo-run"):db.add(BlendRun(id="demo-run",scenario_id="demo-scenario",status="queued",result={},error=""));db.commit();compute(db,"demo-run")
-  if not db.get(FormulaReview,"demo-review"):db.add(FormulaReview(id="demo-review",run_id="demo-run",action="核查名义最优配方的活跃质量约束，并观察固定配方扰动通过数；线性混合和独立均匀误差仅为模拟假设。",state="approved",reviewer="admin@pulp.demo"))
+  if not db.get(FormulaReview,"demo-review"):
+   review=FormulaReview(id="demo-review",run_id="demo-run",action="核查名义最优配方的活跃质量约束，并观察固定配方扰动通过数；线性混合和独立均匀误差仅为模拟假设。",state="approved",reviewer="admin@pulp.demo",version=1,created_by="analyst@pulp.demo")
+   db.add(review);db.flush()
+   db.add(ReviewEvent(id="event-demo-submit",review_id="demo-review",action="submit",from_state="",to_state="submitted",actor="analyst@pulp.demo",comment=review.action,detail={"version":1}))
+   db.add(ReviewEvent(id="event-demo-approve",review_id="demo-review",action="approve",from_state="submitted",to_state="approved",actor="admin@pulp.demo",comment="假设与结论边界核对无误，同意批准。",detail={"version":1}))
   db.commit()
-  if not db.get(Report,"demo-report"):db.add(Report(id="demo-report",review_id="demo-review",title="岑岳原浆配方稳健性底稿",snapshot={"result":db.get(BlendRun,"demo-run").result,"action":db.get(FormulaReview,"demo-review").action,"reviewer":"admin@pulp.demo"}))
+  if not db.get(Report,"demo-report"):
+   review=db.get(FormulaReview,"demo-review")
+   db.add(Report(id="demo-report",review_id="demo-review",title="岑岳原浆配方稳健性底稿",snapshot={"result":db.get(BlendRun,"demo-run").result,"action":review.action,"reviewer":"admin@pulp.demo","review_version":review.version,"review_state":review.state,"run_id":review.run_id,"review_id":review.id}))
   db.commit()
   return {cls.__tablename__:db.scalar(select(func.count()).select_from(cls)) for cls in [User,PulpDataset,QualitySpec,BlendScenario,BlendRun,FormulaReview,Report]}
 if __name__=="__main__":print(json.dumps(seed(),ensure_ascii=False))
